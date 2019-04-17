@@ -1,4 +1,4 @@
-from .synme import VOCDetection, VOCAnnotationTransform, VOC_CLASSES, VOC_ROOT
+from .synme import synmeDetection, synmeAnnotationTransform, SYNME_CLASSES, SYNME_ROOT
 
 from .config import *
 import torch
