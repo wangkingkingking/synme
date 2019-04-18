@@ -53,17 +53,6 @@ class Compose(object):
         return img, boxes, labels
 
 
-class Lambda(object):
-    """Applies a lambda as a transform."""
-
-    def __init__(self, lambd):
-        assert isinstance(lambd, types.LambdaType)
-        self.lambd = lambd
-
-    def __call__(self, img, boxes=None, labels=None):
-        return self.lambd(img, boxes, labels)
-
-
 class ConvertFromInts(object):
     def __call__(self, image, boxes=None, labels=None):
         return image.astype(np.float32), boxes, labels
@@ -195,12 +184,12 @@ class RandomBrightness(object):
         return image, boxes, labels
 
 
-class ToCV2Image(object):
+class ToCV2Image(object): # C H W -> H W C
     def __call__(self, tensor, boxes=None, labels=None):
         return tensor.cpu().numpy().astype(np.float32).transpose((1, 2, 0)), boxes, labels
 
 
-class ToTensor(object):
+class ToTensor(object): # cv2 img(H W C) -> tensor(C H W)
     def __call__(self, cvimage, boxes=None, labels=None):
         return torch.from_numpy(cvimage.astype(np.float32)).permute(2, 0, 1), boxes, labels
 
@@ -348,32 +337,16 @@ class RandomMirror(object):
 
 
 class SwapChannels(object):
-    """Transforms a tensorized image by swapping the channels in the order
-     specified in the swap tuple.
-    Args:
-        swaps (int triple): final order of channels
-            eg: (2, 1, 0)
-    """
 
     def __init__(self, swaps):
         self.swaps = swaps
 
     def __call__(self, image):
-        """
-        Args:
-            image (Tensor): image tensor to be transformed
-        Return:
-            a tensor with channels swapped according to swap
-        """
-        # if torch.is_tensor(image):
-        #     image = image.data.cpu().numpy()
-        # else:
-        #     image = np.array(image)
         image = image[:, :, self.swaps]
         return image
 
 
-class PhotometricDistort(object):
+class PhotometricDistort(object): #First convert to HSV, then Distort, finally, convert back to BGR
     def __init__(self):
         self.pd = [
             RandomContrast(),
@@ -402,7 +375,7 @@ class SSDAugmentation(object):
         self.mean = mean
         self.size = size
         self.augment = Compose([
-            ConvertFromInts(),
+            ConvertFromInts(), #convert to float
             ToAbsoluteCoords(),
             PhotometricDistort(),
             Expand(self.mean),

@@ -12,7 +12,7 @@ else:
 
 SYNME_CLASSES = tuple(range(211))
 
-SYNME_ROOT = osp.join(HOME, 'synme/')
+SYNME_ROOT = osp.join(HOME, 'data/synme/')
 
 class synmeAnnotationTransform(object):
 
@@ -63,9 +63,10 @@ class synmeDetection(data.Dataset):
             (default: 'VOC2007')
     """
 
-    def __init__(self, root='/lusre/home/lpwang/data/synme', target_transform=synmeAnnotationTransform(),
+    def __init__(self, root='/lustre/home/lpwang/data/synme', transform=None, target_transform=synmeAnnotationTransform(),
                  dataset_name='synme', instance_file='train.txt'):
         self.root = root
+        self.transform = transform
         self.target_transform = target_transform
         self.name = dataset_name
         self.pairs = list()
@@ -92,5 +93,10 @@ class synmeDetection(data.Dataset):
         if self.target_transform is not None:
             target = self.target_transform(target, width, height)
 
+        if self.transform is not None:
+            target = np.array(target)
+            img, boxes, labels = self.transform(img, target[:, :4], target[:, 4])
+            target = np.hstack((boxes, np.expand_dims(labels, axis=1)))
+
         img = img[:, :, (2,1,0)] # BGR to RGB
-        return torch.from_numpy(img).permute(2, 1, 0), target, height, width # C H W
+        return torch.from_numpy(img).permute(2, 0, 1), target, height, width # C H W
