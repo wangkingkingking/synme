@@ -1,5 +1,6 @@
 from data import *
 from utils.augmentations import SSDAugmentation
+from utils import str2bool
 from layers.modules import MultiBoxLoss
 from ssd import build_ssd
 import os
@@ -16,8 +17,6 @@ import numpy as np
 import argparse
 from torch import nn
 
-def str2bool(v):
-    return v.lower() in ("yes", "true", "t", "1")
 
 
 parser = argparse.ArgumentParser(
@@ -147,7 +146,8 @@ def train():
             print('timer: %.4f sec.' % (t1 - t0))
             print('iter ' + repr(iteration) + ' || Loss: %.4f ||' % (loss.data.item()), end=' ')
 
-        if iteration != 0 and iteration % 5000 == 0:
+
+        if iteration != 0 and iteration % 500 == 0:
             print('Saving state, iter:', iteration)
             torch.save(ssd_net.state_dict(), 'weights/ssd300_COCO_' +
                        repr(iteration) + '.pth')

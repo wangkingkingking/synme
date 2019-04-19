@@ -1,20 +1,16 @@
-from .config import HOME
 import os.path as osp
 import sys
 import torch
 import torch.utils.data as data
 import cv2
 import numpy as np
-if sys.version_info[0] == 2:
-    import xml.etree.cElementTree as ET
-else:
-    import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET
 
-SYNME_CLASSES = tuple(range(211))
+SYNME_CLASSES = ['background'] + [ str(i+1) for i in range(210) ]
+SYNME_CLASSES = tuple(SYNME_CLASSES)
 
-SYNME_ROOT = osp.join(HOME, 'data/synme/')
 
-class synmeAnnotationTransform(object):
+class AnnotationTransform(object):
 
     def __init__(self, class_to_ind=None):
         self.class_to_ind = class_to_ind or dict(
@@ -48,7 +44,7 @@ class synmeAnnotationTransform(object):
         return res  # [[xmin, ymin, xmax, ymax, label_ind], ... ]
 
 
-class synmeDetection(data.Dataset):
+class Dataset(data.Dataset):
     """
 
     input is image, target is annotation
@@ -63,7 +59,7 @@ class synmeDetection(data.Dataset):
             (default: 'VOC2007')
     """
 
-    def __init__(self, root='/lustre/home/lpwang/data/synme', transform=None, target_transform=synmeAnnotationTransform(),
+    def __init__(self, root='/lustre/home/lpwang/data/synme', transform=None, target_transform=AnnotationTransform(),
                  dataset_name='synme', instance_file='train.txt'):
         self.root = root
         self.transform = transform
@@ -100,3 +96,14 @@ class synmeDetection(data.Dataset):
 
         img = img[:, :, (2,1,0)] # BGR to RGB
         return torch.from_numpy(img).permute(2, 0, 1), target, height, width # C H W
+
+
+    def pull_image(self, index):
+        img_path = osp.join(self.root, pair[0])
+        return cv2.imread(img_path)
+
+    def pull_anno(self, index):
+        anno_path = osp.join(self.root, pair[1])
+        anno = ET.parse(target_path).getroot()
+        gt = self.target_transform(anno, 1, 1)
+        return img_id[1], gt

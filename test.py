@@ -5,16 +5,13 @@ import argparse
 import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
-import torchvision.transforms as transforms
 from torch.autograd import Variable
-from data import VOC_ROOT, VOC_CLASSES as labelmap
-from PIL import Image
-from data import VOCAnnotationTransform, VOCDetection, BaseTransform, VOC_CLASSES
-import torch.utils.data as data
+from data import SYNME_ROOT, SYNME_CLASSES as labelmap
+from data import synmeAnnotationTransform, synmeDetection, ZeroMeanTransform, SYNME_CLASSES
 from ssd import build_ssd
 
 parser = argparse.ArgumentParser(description='Single Shot MultiBox Detection')
-parser.add_argument('--trained_model', default='weights/ssd_300_VOC0712.pth',
+parser.add_argument('--trained_model',
                     type=str, help='Trained state_dict file path to open')
 parser.add_argument('--save_folder', default='eval/', type=str,
                     help='Dir to save results')
@@ -22,8 +19,7 @@ parser.add_argument('--visual_threshold', default=0.6, type=float,
                     help='Final confidence threshold')
 parser.add_argument('--cuda', default=True, type=bool,
                     help='Use cuda to train model')
-parser.add_argument('--voc_root', default=VOC_ROOT, help='Location of VOC root directory')
-parser.add_argument('-f', default=None, type=str, help="Dummy arg so we can load in Jupyter Notebooks")
+parser.add_argument('--synme_root', default=SYNME_ROOT, help='Location of synme dataset root directory')
 args = parser.parse_args()
 
 if args.cuda and torch.cuda.is_available():
@@ -31,7 +27,7 @@ if args.cuda and torch.cuda.is_available():
 else:
     torch.set_default_tensor_type('torch.FloatTensor')
 
-if not os.path.exists(args.save_folder):
+if not os.path.isdir(args.save_folder):
     os.mkdir(args.save_folder)
 
 
@@ -76,22 +72,22 @@ def test_net(save_folder, net, cuda, testset, transform, thresh):
                 j += 1
 
 
-def test_voc():
+def test_synme():
     # load net
-    num_classes = len(VOC_CLASSES) + 1 # +1 background
+    num_classes = len(SYNME_CLASSES) 
     net = build_ssd('test', 300, num_classes) # initialize SSD
     net.load_state_dict(torch.load(args.trained_model))
     net.eval()
     print('Finished loading model!')
     # load data
-    testset = VOCDetection(args.voc_root, [('2007', 'test')], None, VOCAnnotationTransform())
+    testset = synmeDetection(args.synme_root, None, synmeAnnotationTransform(), dataset_name='synme_test', instance_file='test.txt')
     if args.cuda:
         net = net.cuda()
         cudnn.benchmark = True
     # evaluation
     test_net(args.save_folder, net, args.cuda, testset,
-             BaseTransform(net.size, (104, 117, 123)),
+             ZeroMeanTransform(net.size, (104, 117, 123)),
              thresh=args.visual_threshold)
 
 if __name__ == '__main__':
-    test_voc()
+    test_synme()
