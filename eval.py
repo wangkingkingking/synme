@@ -2,11 +2,11 @@ import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
-from config import DATASET_ROOT, MEANS
+from config import DATASET_ROOT, MEANS, EVAL_DIR
 from data import  AnnotationTransform, Dataset, ZeroMeanTransform
 from data import SYNME_CLASSES as labelmap
 from ssd import build_ssd
-from utils import str2bool
+from utils import str2bool, output_file
 
 import sys
 import os
@@ -19,10 +19,9 @@ import cv2
 
 parser = argparse.ArgumentParser(
     description='Single Shot MultiBox Detector Evaluation')
-parser.add_argument('--trained_model',
-                    default='weights/ssd300_mAP_77.43_v2.pth', type=str,
+parser.add_argument('--trained_model', type=str,
                     help='Trained state_dict file path to open')
-parser.add_argument('--save_folder', default='eval/', type=str,
+parser.add_argument('--save_folder', default=EVAL_DIR, type=str,
                     help='File path to save results')
 parser.add_argument('--confidence_threshold', default=0.01, type=float,
                     help='Detection confidence threshold')
@@ -50,15 +49,6 @@ else:
 
 phase = 'test'
 
-
-def get_output_dir(checkpoint, phase):
-    """
-    synme/synme_120000/test
-    """
-    filedir = os.path.join(DATASET_ROOT, checkpoint, phase)
-    if not os.path.isdir(filedir):
-        os.makedirs(filedir)
-    return filedir
 
 
 def get_synme_results_file(phase, cls):
@@ -221,7 +211,6 @@ def test_net(save_folder, net, cuda, dataset, transform, top_k,
 
     # timers
     _t = {'im_detect': Timer(), 'misc': Timer()}
-    output_dir = get_output_dir('synme_120000', phase)
     det_file = os.path.join(output_dir, 'detections.pkl')
 
     for i in range(num_images):
@@ -278,6 +267,8 @@ if __name__ == '__main__':
     dataset = Dataset(DATASET_ROOT,
                            ZeroMeanTransform(300, MEANS),
                            AnnotationTransform())
+    if args.cleanup:
+
     if args.cuda:
         net = net.cuda()
         cudnn.benchmark = True
