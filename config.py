@@ -26,4 +26,4 @@ synme = {
     'name': 'synme',
 }
 
-DATASET_ROOT = osp.join(HOME, 'data/synme/')
+DATASET_ROOT = os.path.join(HOME, 'data/synme/')

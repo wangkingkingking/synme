@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
-from data import SYNME_ROOT, synmeAnnotationTransform, synmeDetection, ZeroMeanTransform, MEANS
+from config import DATASET_ROOT, MEANS
+from data import  AnnotationTransform, Dataset, ZeroMeanTransform
 from data import SYNME_CLASSES as labelmap
 from ssd import build_ssd
 from utils import str2bool
@@ -54,16 +55,16 @@ def get_output_dir(checkpoint, phase):
     """
     synme/synme_120000/test
     """
-    filedir = os.path.join(SYNME_ROOT, checkpoint, phase)
+    filedir = os.path.join(DATASET_ROOT, checkpoint, phase)
     if not os.path.isdir(filedir):
         os.makedirs(filedir)
     return filedir
 
 
 def get_synme_results_file(phase, cls):
-    # SYNME_ROOT/results/det_test_class_1.txt
+    # DATASET_ROOT/results/det_test_class_1.txt
     filename = 'det_' + phase + 'class_%s.txt' % (cls)
-    filedir = os.path.join(SYNME_ROOT, 'results')
+    filedir = os.path.join(DATASET_ROOT, 'results')
     if not os.path.exists(filedir):
         os.makedirs(filedir)
     path = os.path.join(filedir, filename)
@@ -91,10 +92,10 @@ def write_synme_results_file(all_boxes, dataset):
 
 
 def do_python_eval(eval_value_dir='output'):
-    cachedir = os.path.join(SYNME_ROOT, 'annotations_cache')
+    cachedir = os.path.join(DATASET_ROOT, 'annotations_cache')
     if not os.path.isdir(eval_value_dir):
         os.mkdir(eval_value_dir)
-    test_list_file = os.path.join(SYNME_ROOT, 'test.txt') 
+    test_list_file = os.path.join(DATASET_ROOT, 'test.txt') 
     aps = []
     for i, cls in enumerate(labelmap):
         if i==0:
@@ -128,7 +129,7 @@ def synme_eval_cls(test_list_file,
         os.mkdir(cachedir)
 
     cachefile = os.path.join(cachedir, 'annots.pkl')
-    anno_dic = get_anno_dic(cache_file, os.path.join(SYNME_ROOT, 'test.txt'))
+    anno_dic = get_anno_dic(cache_file, os.path.join(DATASET_ROOT, 'test.txt'))
     # extract gt objects for this class
     class_recs = {}
     npos = 0
@@ -274,9 +275,9 @@ if __name__ == '__main__':
     net.eval()
     print('Finished loading model!')
     # load data
-    dataset = synmeDetection(SYNME_ROOT,
+    dataset = Dataset(DATASET_ROOT,
                            ZeroMeanTransform(300, MEANS),
-                           synmeAnnotationTransform())
+                           AnnotationTransform())
     if args.cuda:
         net = net.cuda()
         cudnn.benchmark = True

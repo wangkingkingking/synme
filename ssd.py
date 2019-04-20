@@ -5,6 +5,7 @@ from torch.autograd import Variable
 from layers import *
 import os
 
+from config import synme
 
 class SSD(nn.Module):
     """Single Shot Multibox Architecture
@@ -24,14 +25,14 @@ class SSD(nn.Module):
         head: "multibox head" consists of loc and conf conv layers
     """
 
-    def __init__(self, phase, size, base, extras, head, num_classes):
+    def __init__(self, phase, base, extras, head, cfg):
         super(SSD, self).__init__()
         self.phase = phase
-        self.num_classes = num_classes
-        self.cfg = (coco, voc)[num_classes == 21]
+        self.cfg = cfg
+        self.num_classes = cfg['num_classes']
         self.priorbox = PriorBox(self.cfg)
         self.priors = Variable(self.priorbox.forward(), volatile=True)
-        self.size = size
+        self.size = cfg['min_dim'] 
 
         # SSD network
         self.vgg = nn.ModuleList(base)
@@ -44,7 +45,7 @@ class SSD(nn.Module):
 
         if phase == 'test':
             self.softmax = nn.Softmax(dim=-1)
-            self.detect = Detect(num_classes, 0, 200, 0.01, 0.45)
+            self.detect = Detect(self.num_classes, 0, 200, 0.01, 0.45)
 
     def forward(self, x):
         """Applies network layers and ops on input image(s) x.
@@ -194,7 +195,9 @@ mbox = {
 }
 
 
-def build_ssd(phase, size=300, num_classes=21):
+def build_ssd(phase, cfg = synme):
+    size = cfg['min_dim']
+    num_classes = cfg['num_classes']
     if phase != "test" and phase != "train":
         print("ERROR: Phase: " + phase + " not recognized")
         return
@@ -205,4 +208,4 @@ def build_ssd(phase, size=300, num_classes=21):
     base_, extras_, head_ = multibox(vgg(base[str(size)], 3),
                                      add_extras(extras[str(size)], 1024),
                                      mbox[str(size)], num_classes)
-    return SSD(phase, size, base_, extras_, head_, num_classes)
+    return SSD(phase, base_, extras_, head_, cfg)

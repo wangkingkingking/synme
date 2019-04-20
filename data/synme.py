@@ -6,6 +6,8 @@ import cv2
 import numpy as np
 import xml.etree.ElementTree as ET
 
+from config import DATASET_ROOT
+
 SYNME_CLASSES = ['background'] + [ str(i+1) for i in range(210) ]
 SYNME_CLASSES = tuple(SYNME_CLASSES)
 
@@ -27,7 +29,6 @@ class AnnotationTransform(object):
         res = []
         for obj in target.iter('object'):
             name = obj.find('name').text.lower().strip()
-            name = int(name)
             bbox = obj.find('bndbox')
 
             pts = ['xmin', 'ymin', 'xmax', 'ymax']
@@ -59,7 +60,7 @@ class Dataset(data.Dataset):
             (default: 'VOC2007')
     """
 
-    def __init__(self, root='/lustre/home/lpwang/data/synme', transform=None, target_transform=AnnotationTransform(),
+    def __init__(self, root=DATASET_ROOT, transform=None, target_transform=AnnotationTransform(),
                  dataset_name='synme', instance_file='train.txt'):
         self.root = root
         self.transform = transform
@@ -72,7 +73,6 @@ class Dataset(data.Dataset):
 
     def __getitem__(self, index):
         im, gt, h, w = self.pull_item(index)
-
         return im, gt
 
     def __len__(self):

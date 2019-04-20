@@ -1,8 +1,9 @@
-from data import *
-from utils.augmentations import SSDAugmentation
+from data import SSDAugmentation, Dataset, detection_collate
+from config import synme, DATASET_ROOT, MEANS
 from utils import str2bool
 from layers.modules import MultiBoxLoss
 from ssd import build_ssd
+
 import os
 import sys
 import time
@@ -15,14 +16,12 @@ import torch.nn.init as init
 import torch.utils.data as data
 import numpy as np
 import argparse
-from torch import nn
-
 
 
 parser = argparse.ArgumentParser(
     description='Single Shot MultiBox Detector Training With Pytorch')
 train_set = parser.add_mutually_exclusive_group()
-parser.add_argument('--dataset_root', default=SYNME_ROOT,
+parser.add_argument('--dataset_root', default=DATASET_ROOT,
                     help='Dataset root directory path')
 parser.add_argument('--basenet', default='vgg16_reducedfc.pth',
                     help='Pretrained base model')
@@ -65,9 +64,9 @@ if not os.path.exists(args.save_folder):
 
 def train():
     cfg = synme
-    dataset = synmeDetection(root=args.dataset_root, transform=SSDAugmentation(cfg['min_dim'], MEANS))
+    dataset = Dataset(root=args.dataset_root, transform=SSDAugmentation(cfg['min_dim'], MEANS))
 
-    ssd_net = build_ssd('train', cfg['min_dim'], cfg['num_classes'])
+    ssd_net = build_ssd('train', synme) 
     net = ssd_net
 
     if args.cuda:
@@ -149,7 +148,7 @@ def train():
 
         if iteration != 0 and iteration % 500 == 0:
             print('Saving state, iter:', iteration)
-            torch.save(ssd_net.state_dict(), 'weights/ssd300_COCO_' +
+            torch.save(ssd_net.state_dict(), 'weights/ssd300_synme_' +
                        repr(iteration) + '.pth')
     torch.save(ssd_net.state_dict(),
                args.save_folder + dataset.name + '.pth')
