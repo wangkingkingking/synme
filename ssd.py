@@ -31,7 +31,7 @@ class SSD(nn.Module):
         self.cfg = cfg
         self.num_classes = cfg['num_classes']
         self.priorbox = PriorBox(self.cfg)
-        self.priors = Variable(self.priorbox.forward(), volatile=True)
+        self.priors = Variable(self.priorbox.forward(), requires_grad=False)
         self.size = cfg['min_dim'] 
 
         # SSD network
@@ -109,16 +109,6 @@ class SSD(nn.Module):
                 self.priors
             )
         return output
-
-    def load_weights(self, base_file):
-        other, ext = os.path.splitext(base_file)
-        if ext == '.pkl' or '.pth':
-            print('Loading weights into state dict...')
-            self.load_state_dict(torch.load(base_file,
-                                 map_location=lambda storage, loc: storage))
-            print('Finished!')
-        else:
-            print('Sorry only .pth and .pkl files supported.')
 
 
 # This function is derived from torchvision VGG make_layers()

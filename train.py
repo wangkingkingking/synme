@@ -1,22 +1,21 @@
-from data import SSDAugmentation, Dataset, detection_collate
-from config import synme, DATASET_ROOT, MEANS
-from utils import str2bool
-from layers.modules import MultiBoxLoss
-from ssd import build_ssd
-
+import argparse
 import os
 import sys
 import time
 import torch
-from torch.autograd import Variable
-import torch.nn as nn
-import torch.optim as optim
-import torch.backends.cudnn as cudnn
-import torch.nn.init as init
-import torch.utils.data as data
-import numpy as np
-import argparse
 
+from torch.autograd import Variable
+from torch import nn
+from torch import optim
+from torch.nn import init
+from torch.backends import cudnn
+import numpy as np
+
+from data import SSDAugmentation, Dataset, detection_collate
+from config import synme, DATASET_ROOT, MEANS
+from utils import str2bool, load_weights, save_weights
+from layers.modules import MultiBoxLoss
+from ssd import build_ssd
 
 parser = argparse.ArgumentParser(
     description='Single Shot MultiBox Detector Training With Pytorch')
@@ -58,6 +57,7 @@ if torch.cuda.is_available():
 else:
     torch.set_default_tensor_type('torch.FloatTensor')
 
+
 if not os.path.exists(args.save_folder):
     os.mkdir(args.save_folder)
 
@@ -66,30 +66,31 @@ def train():
     cfg = synme
     dataset = Dataset(root=args.dataset_root, transform=SSDAugmentation(cfg['min_dim'], MEANS))
 
-    ssd_net = build_ssd('train', synme) 
-    net = ssd_net
-
-    if args.cuda:
-        net = torch.nn.DataParallel(ssd_net).cuda()
-        cudnn.benchmark = True
+    net = build_ssd('train', synme) 
 
     if args.resume:
-        print('Resuming training, loading {}...'.format(args.resume))
-        ssd_net.load_weights(args.resume)
+        print('Resume training...')
+        load_weights(net, args.resume)
     else:
-        vgg_weights = torch.load(args.save_folder + args.basenet)
+        vgg_weights = args.save_folder + args.basenet
         print('Loading base network...')
-        ssd_net.vgg.load_state_dict(vgg_weights)
+        load_weights(net.vgg, vgg_weights)
 
     if not args.resume:
         print('Initializing weights...')
         # initialize newly added layers' weights with xavier method
-        ssd_net.extras.apply(weights_init)
-        ssd_net.loc.apply(weights_init)
-        ssd_net.conf.apply(weights_init)
+        net.extras.apply(weights_init)
+        net.loc.apply(weights_init)
+        net.conf.apply(weights_init)
+
+    if args.cuda:
+        net = torch.nn.DataParallel(net).cuda()
+        cudnn.benchmark = True
+
 
     optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum,
                           weight_decay=args.weight_decay)
+    lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, synme['lr_steps'])
     criterion = MultiBoxLoss(cfg['num_classes'], 0.5, True, 0, True, 3, 0.5,
                              False, args.cuda)
 
@@ -102,9 +103,8 @@ def train():
     print('Using the specified args:')
     print(args)
 
-    step_index = 0
 
-    data_loader = data.DataLoader(dataset, args.batch_size,
+    data_loader = torch.utils.data.DataLoader(dataset, args.batch_size,
                                   num_workers=args.num_workers,
                                   shuffle=True, collate_fn=detection_collate,
                                   pin_memory=True)
@@ -112,10 +112,6 @@ def train():
     for iteration in range(args.start_iter, cfg['max_iter']):
         if iteration != 0 and (iteration % epoch_size == 0):
             epoch += 1
-
-        if iteration in cfg['lr_steps']:
-            step_index += 1
-            adjust_learning_rate(optimizer, args.gamma, step_index)
 
         try:
             images, targets = next(batch_iterator)
@@ -125,10 +121,10 @@ def train():
 
         if args.cuda:
             images = Variable(images.cuda())
-            targets = [Variable(ann.cuda(), volatile=True) for ann in targets]
+            targets = [Variable(ann.cuda(), requires_grad=False) for ann in targets]
         else:
             images = Variable(images)
-            targets = [Variable(ann, volatile=True) for ann in targets]
+            targets = [Variable(ann, requires_grad=False) for ann in targets]
         # forward
         t0 = time.time()
         out = net(images)
@@ -138,6 +134,7 @@ def train():
         loss = loss_l + loss_c
         loss.backward()
         optimizer.step()
+        lr_scheduler.step()
         t1 = time.time()
 
 
@@ -148,25 +145,16 @@ def train():
 
         if iteration != 0 and iteration % 500 == 0:
             print('Saving state, iter:', iteration)
-            torch.save(ssd_net.state_dict(), 'weights/ssd300_synme_' +
-                       repr(iteration) + '.pth')
-    torch.save(ssd_net.state_dict(),
-               args.save_folder + dataset.name + '.pth')
+            pkl_file = 'ssd300_synme_' + repr(iteration) + '.pth'
+            save_weights(net, os.path.join(args.save_folder, pkl_file))
 
-
-def adjust_learning_rate(optimizer, gamma, step):
-    lr = args.lr * (gamma ** (step))
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-
-
-def xavier(param):
-    init.xavier_uniform(param)
+    pkl_file = args.save_folder + dataset.name + '.pth'
+    save_weights(net, os.path.join(args.save_folder, pkl_file))
 
 
 def weights_init(m):
     if isinstance(m, nn.Conv2d):
-        xavier(m.weight.data)
+        init.xavier_uniform(m.weight.data)
         m.bias.data.zero_()
 
 

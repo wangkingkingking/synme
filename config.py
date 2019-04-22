@@ -27,5 +27,4 @@ synme = {
 }
 
 DATASET_ROOT = os.path.join(HOME, 'data/synme/')
-EVAL_DIR = os.path.join(DATASET_ROOT, 'eval')
-DETECTION_DIR = os.path.join(DATASET_ROOT, 'detection')
+EVAL_DIR = 'eval' 

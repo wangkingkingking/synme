@@ -1,13 +1,4 @@
 import torch
-import torch.nn as nn
-import torch.backends.cudnn as cudnn
-from torch.autograd import Variable
-from config import DATASET_ROOT, MEANS, EVAL_DIR
-from data import  AnnotationTransform, Dataset, ZeroMeanTransform
-from data import SYNME_CLASSES as labelmap
-from ssd import build_ssd
-from utils import str2bool, output_file
-
 import sys
 import os
 import time
@@ -15,6 +6,16 @@ import argparse
 import numpy as np
 import pickle
 import cv2
+
+from torch import nn
+from torch.backends import cudnn
+from torch.autograd import Variable
+
+from config import DATASET_ROOT, MEANS, EVAL_DIR, synme
+from data import  AnnotationTransform, Dataset, ZeroMeanTransform
+from data import SYNME_CLASSES as classnames
+from ssd import build_ssd
+from utils import str2bool, output_file, load_weights, Timer
 
 
 parser = argparse.ArgumentParser(
@@ -31,8 +32,8 @@ parser.add_argument('--cuda', default=True, type=str2bool,
                     help='Use cuda to train model')
 parser.add_argument('--cleanup', default=True, type=str2bool,
                     help='Cleanup and remove results files following eval')
-
 args = parser.parse_args()
+
 
 if not os.path.isdir(args.save_folder):
     os.mkdir(args.save_folder)
@@ -48,26 +49,19 @@ else:
     torch.set_default_tensor_type('torch.FloatTensor')
 
 phase = 'test'
+det_pkl_file = os.path.join(args.save_folder, 'detections.pkl')
+
+def class_dec_result_filepath(cls):
+    filename = 'det_' + 'class_%s.txt' % (cls)
+    return  os.path.join(args.save_dir, filename)
 
 
-
-def get_synme_results_file(phase, cls):
-    # DATASET_ROOT/results/det_test_class_1.txt
-    filename = 'det_' + phase + 'class_%s.txt' % (cls)
-    filedir = os.path.join(DATASET_ROOT, 'results')
-    if not os.path.exists(filedir):
-        os.makedirs(filedir)
-    path = os.path.join(filedir, filename)
-    return path
-
-
-def write_synme_results_file(all_boxes, dataset):
-    # labelmap: ('background', '1', '2',...)
-    for cls_ind, cls in enumerate(labelmap):
+def write_dec_results(all_boxes, dataset):
+    for cls_ind, cls_name in enumerate(classnames):
         if cls_ind == 0: #background
             continue
         print('Writing class {:s} synme results file'.format(cls))
-        filename = get_synme_results_file(phase, cls)
+        filename = class_dec_result_file(args.save_dir, cls_name)
         with open(filename, 'w') as f:
             for im_ind, pair in enumerate(dataset.pairs):
                 dets = all_boxes[cls_ind][im_ind]
@@ -81,17 +75,14 @@ def write_synme_results_file(all_boxes, dataset):
                                    dets[k, 2] + 1, dets[k, 3] + 1))
 
 
-def do_python_eval(eval_value_dir='output'):
-    cachedir = os.path.join(DATASET_ROOT, 'annotations_cache')
-    if not os.path.isdir(eval_value_dir):
-        os.mkdir(eval_value_dir)
+def eval_value():
     test_list_file = os.path.join(DATASET_ROOT, 'test.txt') 
     aps = []
-    for i, cls in enumerate(labelmap):
+    for i, cls in enumerate(classnames):
         if i==0:
-            continue
-        filename = get_synme_results_file(phase, cls)
-        rec, prec, ap = synme_eval_cls(
+            continue #background
+        filename = class_dec_result_file(cls)
+        rec, prec, ap = eval_cls(
            filename, annopath, test_list_file, cls, cachedir,
            ovthresh=0.5, use_07_metric=use_07_metric)
         aps += [ap]
@@ -108,17 +99,11 @@ def do_python_eval(eval_value_dir='output'):
     print('')
 
 
-def synme_eval_cls(test_list_file,
-             classname,
-             cachedir,
-             ovthresh=0.5,
-             ):
-
+def eval_cls(classname, ovthresh=0.5):
     # first load gt
     if not os.path.isdir(cachedir):
         os.mkdir(cachedir)
 
-    cachefile = os.path.join(cachedir, 'annots.pkl')
     anno_dic = get_anno_dic(cache_file, os.path.join(DATASET_ROOT, 'test.txt'))
     # extract gt objects for this class
     class_recs = {}
@@ -200,27 +185,25 @@ def synme_eval_cls(test_list_file,
     return rec, prec, ap
 
 
-def test_net(save_folder, net, cuda, dataset, transform, top_k,
-             im_size=300, thresh=0.05):
+def test_net(net, dataset, transform, top_k, thresh=0.05):
+
     num_images = len(dataset)
     # all detections are collected into:
     #    all_boxes[cls][image] = N x 5 array of detections in
     #    (x1, y1, x2, y2, score)
     all_boxes = [[[] for _ in range(num_images)]
-                 for _ in range(len(labelmap))]
+                 for _ in range(len(classnames))]
 
-    # timers
     _t = {'im_detect': Timer(), 'misc': Timer()}
-    det_file = os.path.join(output_dir, 'detections.pkl')
 
     for i in range(num_images):
         im, gt, h, w = dataset.pull_item(i)
-
+        print(im.type())
         x = Variable(im.unsqueeze(0))
-        if args.cuda:
-            x = x.cuda()
         _t['im_detect'].tic()
-        detections = net(x).data
+        print(x.type())
+        print(type(gt))
+        detections = net(x).detach()
         detect_time = _t['im_detect'].toc(average=False)
 
         # skip j = 0, because it's the background class
@@ -244,35 +227,32 @@ def test_net(save_folder, net, cuda, dataset, transform, top_k,
         print('im_detect: {:d}/{:d} {:.3f}s'.format(i + 1,
                                                     num_images, detect_time))
 
+    det_file = os.path.join(output_dir, 'detections.pkl')
     with open(det_file, 'wb') as f:
         pickle.dump(all_boxes, f, pickle.HIGHEST_PROTOCOL)
 
-    print('Evaluating detections')
-    evaluate_detections(all_boxes, output_dir, dataset)
+    print('Evaluating detections...')
+    write_synme_results_file()
+    eval_value()
 
-
-def evaluate_detections(box_list, output_dir, dataset):
-    write_synme_results_file(box_list, dataset)
-    do_python_eval(output_dir)
 
 
 if __name__ == '__main__':
-    # load net
-    num_classes = len(labelmap) 
-    net = build_ssd('test', 300, num_classes)     
-    net.load_state_dict(torch.load(args.trained_model))
-    net.eval()
-    print('Finished loading model!')
-    # load data
-    dataset = Dataset(DATASET_ROOT,
-                           ZeroMeanTransform(300, MEANS),
-                           AnnotationTransform())
-    if args.cleanup:
 
+    net = build_ssd('test', synme)
+    load_weights(net, args.trained_model)
     if args.cuda:
         net = net.cuda()
         cudnn.benchmark = True
-    # evaluation
-    test_net(args.save_folder, net, args.cuda, dataset,
-             ZeroMeanTransform(net.size, MEANS), args.top_k, 300,
+
+    net.eval()
+    print('Finished loading model!')
+
+    dataset = Dataset(instance_file = 'test.txt')
+
+    if args.cleanup:
+        raise NotImplementedError
+
+    test_net(net, dataset,
+             ZeroMeanTransform(net.size, MEANS), args.top_k, 
              thresh=args.confidence_threshold)
