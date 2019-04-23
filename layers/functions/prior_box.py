@@ -14,7 +14,7 @@ class PriorBox(object):
         # number of priors for feature map location (either 4 or 6)
         self.num_priors = len(cfg['aspect_ratios'])
         self.variance = cfg['variance'] or [0.1]
-        self.feature_maps = cfg['feature_maps']
+        self.feature_maps = cfg['feature_maps'] #[38, 19, ...]
         self.min_sizes = cfg['min_sizes']
         self.max_sizes = cfg['max_sizes']
         self.steps = cfg['steps']

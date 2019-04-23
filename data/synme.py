@@ -96,6 +96,7 @@ class Dataset(data.Dataset):
 
         img = img[:, :, (2,1,0)] # BGR to RGB
         return torch.from_numpy(img).permute(2, 0, 1).type(torch.Tensor), target, height, width # C H W
+        #return torch.from_numpy(img).permute(2, 0, 1), target, height, width
 
 
     def pull_image(self, index):

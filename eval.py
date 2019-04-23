@@ -198,11 +198,8 @@ def test_net(net, dataset, transform, top_k, thresh=0.05):
 
     for i in range(num_images):
         im, gt, h, w = dataset.pull_item(i)
-        print(im.type())
         x = Variable(im.unsqueeze(0))
         _t['im_detect'].tic()
-        print(x.type())
-        print(type(gt))
         detections = net(x).detach()
         detect_time = _t['im_detect'].toc(average=False)
 
@@ -248,7 +245,7 @@ if __name__ == '__main__':
     net.eval()
     print('Finished loading model!')
 
-    dataset = Dataset(instance_file = 'test.txt')
+    dataset = Dataset(transform=ZeroMeanTransform(300, MEANS), instance_file = 'test.txt')
 
     if args.cleanup:
         raise NotImplementedError

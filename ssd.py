@@ -2,10 +2,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from layers import *
 import os
 
+from layers import *
 from config import synme
+
+base = {
+    '300': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'C', 512, 512, 512, 'M',
+            512, 512, 512],
+}
+extras = {
+    '300': [256, 'S', 512, 128, 'S', 256, 128, 256, 128, 256],
+}
+mbox = {
+    '300': [4, 6, 6, 6, 4, 4],  # number of boxes per feature map location
+}
 
 class SSD(nn.Module):
     """Single Shot Multibox Architecture
@@ -19,26 +30,26 @@ class SSD(nn.Module):
 
     Args:
         phase: (string) Can be "test" or "train"
-        size: input image size
         base: VGG16 layers for input, size of either 300 or 500
         extras: extra layers that feed to multibox loc and conf layers
         head: "multibox head" consists of loc and conf conv layers
+        cfg: dataset's configurations
     """
 
     def __init__(self, phase, base, extras, head, cfg):
         super(SSD, self).__init__()
         self.phase = phase
         self.cfg = cfg
-        self.num_classes = cfg['num_classes']
         self.priorbox = PriorBox(self.cfg)
-        self.priors = Variable(self.priorbox.forward(), requires_grad=False)
+        self.priors = self.priorbox.forward() # (8732, 4)
         self.size = cfg['min_dim'] 
+        self.num_classes = cfg['num_classes']
 
         # SSD network
         self.vgg = nn.ModuleList(base)
+        self.extras = nn.ModuleList(extras)
         # Layer learns to scale the l2 normalized features from conv4_3
         self.L2Norm = L2Norm(512, 20)
-        self.extras = nn.ModuleList(extras)
 
         self.loc = nn.ModuleList(head[0])
         self.conf = nn.ModuleList(head[1])
@@ -48,8 +59,7 @@ class SSD(nn.Module):
             self.detect = Detect(self.num_classes, 0, 200, 0.01, 0.45)
 
     def forward(self, x):
-        """Applies network layers and ops on input image(s) x.
-
+        """
         Args:
             x: input image or batch of images. Shape: [batch,3,300,300].
 
@@ -59,7 +69,6 @@ class SSD(nn.Module):
                 Variable(tensor) of output class label predictions,
                 confidence score, and corresponding location predictions for
                 each object detected. Shape: [batch,topk,7]
-
             train:
                 list of concat outputs from:
                     1: confidence layers, Shape: [batch*num_priors,num_classes]
@@ -90,17 +99,17 @@ class SSD(nn.Module):
 
         # apply multibox head to source layers
         for (x, l, c) in zip(sources, self.loc, self.conf):
-            loc.append(l(x).permute(0, 2, 3, 1).contiguous())
-            conf.append(c(x).permute(0, 2, 3, 1).contiguous())
+            loc.append(l(x).permute(0, 2, 3, 1).contiguous())   #B, W, H, 4/6 * 4
+            conf.append(c(x).permute(0, 2, 3, 1).contiguous())  #B, W, H, 4/6 * num_classes 
 
-        loc = torch.cat([o.view(o.size(0), -1) for o in loc], 1)
-        conf = torch.cat([o.view(o.size(0), -1) for o in conf], 1)
+        loc = torch.cat([o.view(o.size(0), -1) for o in loc], 1) # B, -1 
+        conf = torch.cat([o.view(o.size(0), -1) for o in conf], 1) # B, -1
         if self.phase == "test":
             output = self.detect(
-                loc.view(loc.size(0), -1, 4),                   # loc preds
+                loc.view(loc.size(0), -1, 4),                # B, _, 4 
                 self.softmax(conf.view(conf.size(0), -1,
-                             self.num_classes)),                # conf preds
-                self.priors.type(type(x.data))                  # default boxes
+                             self.num_classes)),                # B, _, 211
+                self.priors                                # 8732, 4
             )
         else:
             output = (
@@ -113,9 +122,9 @@ class SSD(nn.Module):
 
 # This function is derived from torchvision VGG make_layers()
 # https://github.com/pytorch/vision/blob/master/torchvision/models/vgg.py
-def vgg(cfg, i, batch_norm=False):
+def vgg(cfg, batch_norm=False):
     layers = []
-    in_channels = i
+    in_channels = 3
     for v in cfg:
         if v == 'M':
             layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
@@ -156,7 +165,7 @@ def add_extras(cfg, i, batch_norm=False):
 def multibox(vgg, extra_layers, cfg, num_classes):
     loc_layers = []
     conf_layers = []
-    vgg_source = [21, -2]
+    vgg_source = [21, -2] #vgg layers used as features conv4_3 conv7
     for k, v in enumerate(vgg_source):
         loc_layers += [nn.Conv2d(vgg[v].out_channels,
                                  cfg[k] * 4, kernel_size=3, padding=1)]
@@ -170,20 +179,6 @@ def multibox(vgg, extra_layers, cfg, num_classes):
     return vgg, extra_layers, (loc_layers, conf_layers)
 
 
-base = {
-    '300': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'C', 512, 512, 512, 'M',
-            512, 512, 512],
-    '512': [],
-}
-extras = {
-    '300': [256, 'S', 512, 128, 'S', 256, 128, 256, 128, 256],
-    '512': [],
-}
-mbox = {
-    '300': [4, 6, 6, 6, 4, 4],  # number of boxes per feature map location
-    '512': [],
-}
-
 
 def build_ssd(phase, cfg = synme):
     size = cfg['min_dim']
@@ -195,7 +190,7 @@ def build_ssd(phase, cfg = synme):
         print("ERROR: You specified size " + repr(size) + ". However, " +
               "currently only SSD300 (size=300) is supported!")
         return
-    base_, extras_, head_ = multibox(vgg(base[str(size)], 3),
+    base_, extras_, head_ = multibox(vgg(base[str(size)]),
                                      add_extras(extras[str(size)], 1024),
                                      mbox[str(size)], num_classes)
     return SSD(phase, base_, extras_, head_, cfg)
